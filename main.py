@@ -41,7 +41,7 @@ def download_video(url, filename):
                 bar.update(len(chunk))
     return True
 
-# ================= MAL (SAME AS OLD SCRAPER) =================
+# ================= MAL (UNCHANGED) =================
 def get_or_create_anime(mal_url, anime_name):
     slug = slugify(anime_name)
 
@@ -70,18 +70,15 @@ def episode_exists(anime_id, season, episode):
     )
 
     r = requests.get(url, headers=DB_HEADERS)
-    if r.status_code != 200:
-        return False
+    return r.status_code == 200 and len(r.json()) > 0
 
-    return len(r.json()) > 0
-
-# ================= EPISODE SAVE (UNCHANGED) =================
+# ================= EPISODE SAVE =================
 def save_episode(anime_id, season, episode, video_url, source_url):
     payload = {
         "anime_id": anime_id,
         "season": season,
         "episode": episode,
-        "iframe": video_url,   # 🔥 SAME FIELD NAME
+        "iframe": video_url,   # SAME FIELD
         "url": source_url
     }
 
@@ -97,7 +94,7 @@ def save_episode(anime_id, season, episode, video_url, source_url):
         print(f"✅ DB saved S{season}E{episode}")
 
 # ================= MAIN =================
-print("=== ARCHIVE AUTO PIPELINE (AUTO-SKIP ENABLED) ===\n")
+print("=== ARCHIVE AUTO PIPELINE (AUTO-SKIP + AUTO-DELETE) ===\n")
 
 mal_url = input("MyAnimeList URL: ").strip()
 anime_name = safe_name(input("Anime Name: ").strip())
@@ -108,7 +105,6 @@ quality = input("Quality (480p / 720p / 1080p): ").strip()
 anime_id = get_or_create_anime(mal_url, anime_name)
 
 while True:
-    # 🔥 AUTO-SKIP EXISTING EPISODES
     if episode_exists(anime_id, season, episode):
         print(f"⏭️ S{season}E{episode} already exists — skipping")
         episode += 1
@@ -146,6 +142,11 @@ while True:
 
     save_episode(anime_id, season, episode, video_url, download_url)
 
-    episode += 1  # 🔥 NEXT EPISODE AUTO
+    # 🔥 AUTO DELETE LOCAL FILE
+    if os.path.exists(filename):
+        os.remove(filename)
+        print("🗑️ Local video deleted")
+
+    episode += 1
 
 print("\n🎉 ALL DONE")
