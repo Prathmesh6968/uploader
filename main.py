@@ -1,18 +1,29 @@
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError
 import time
-
-START_URL = "https://animedekho.app/epi/sentenced-to-be-a-hero-1x1/"
-
-visited = set()
 
 def scrape_iframes(page, url):
     print(f"\n🔎 Opening: {url}")
-    page.goto(url, wait_until="networkidle", timeout=60000)
 
-    # wait for JS-rendered iframe
-    page.wait_for_selector("iframe", timeout=60000)
+    # IMPORTANT: do NOT use networkidle
+    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+    # small delay for JS players
+    page.wait_for_timeout(3000)
+
+    # Try clicking play button (some sites require this)
+    try:
+        page.click("button", timeout=3000)
+    except:
+        pass
+
+    try:
+        page.wait_for_selector("iframe", timeout=60000)
+    except TimeoutError:
+        print("❌ No iframe found")
+        return []
 
     iframe_links = []
+
     for iframe in page.query_selector_all("iframe"):
         src = iframe.get_attribute("src")
         if src and src.startswith("http"):
@@ -22,56 +33,38 @@ def scrape_iframes(page, url):
     return iframe_links
 
 
-def get_next_episode(page):
-    selectors = [
-        "a[rel='next']",
-        "a.next",
-        "a:has-text('Next')",
-        "a:has-text('Episode')"
-    ]
+def main():
+    url = input("Enter URL: ").strip()
 
-    for sel in selectors:
-        link = page.query_selector(sel)
-        if link:
-            href = link.get_attribute("href")
-            if href and href.startswith("http"):
-                print("➡ Next episode:", href)
-                return href
-    return None
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled"
+            ]
+        )
 
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            viewport={"width": 1280, "height": 720}
+        )
 
-with sync_playwright() as p:
-    browser = p.chromium.launch(
-        headless=True,
-        args=[
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-blink-features=AutomationControlled"
-        ]
-    )
+        page = context.new_page()
 
-    context = browser.new_context(
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    )
+        iframe_links = scrape_iframes(page, url)
 
-    page = context.new_page()
-
-    current_url = START_URL
-
-    while current_url and current_url not in visited:
-        visited.add(current_url)
-
-        iframe_links = scrape_iframes(page, current_url)
-
-        # save results
-        for link in iframe_links:
+        # Save results
+        if iframe_links:
             with open("iframe_links.txt", "a", encoding="utf-8") as f:
-                f.write(f"{current_url} | {link}\n")
+                for link in iframe_links:
+                    f.write(f"{url} | {link}\n")
 
-        time.sleep(2)
+        browser.close()
 
-        current_url = get_next_episode(page)
+    print("\n✅ SCRAPING DONE")
 
-    browser.close()
 
-print("\n✅ SCRAPING COMPLETED")
+if __name__ == "__main__":
+    main()
