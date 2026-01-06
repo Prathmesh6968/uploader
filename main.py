@@ -1,70 +1,62 @@
-from playwright.sync_api import sync_playwright, TimeoutError
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
+import os
 
-def scrape_iframes(page, url):
-    print(f"\n🔎 Opening: {url}")
+URL = "https://archive.toonworld4all.me/episode/tokyo-ghoul-1x3"
 
-    # IMPORTANT: do NOT use networkidle
-    page.goto(url, wait_until="domcontentloaded", timeout=60000)
+def get_iframe():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
 
-    # small delay for JS players
-    page.wait_for_timeout(3000)
+    # Codespaces paths
+    chrome_options.binary_location = "/usr/bin/chromium"
 
-    # Try clicking play button (some sites require this)
+    service = Service("/usr/bin/chromedriver")
+
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
     try:
-        page.click("button", timeout=3000)
-    except:
-        pass
+        print("[+] Opening page...")
+        driver.get(URL)
 
-    try:
-        page.wait_for_selector("iframe", timeout=60000)
-    except TimeoutError:
-        print("❌ No iframe found")
-        return []
+        wait = WebDriverWait(driver, 30)
 
-    iframe_links = []
+        # 🔹 Click "Watch Online"
+        print("[+] Clicking Watch Online...")
+        watch_btn = wait.until(
+            EC.element_to_be_clickable((
+                By.XPATH,
+                "//a[contains(text(),'Watch')] | //button[contains(text(),'Watch')]"
+            ))
+        )
+        driver.execute_script("arguments[0].click();", watch_btn)
 
-    for iframe in page.query_selector_all("iframe"):
-        src = iframe.get_attribute("src")
-        if src and src.startswith("http"):
-            iframe_links.append(src)
-            print("✅ IFRAME:", src)
-
-    return iframe_links
-
-
-def main():
-    url = input("Enter URL: ").strip()
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
-            ]
+        # 🔹 Wait for iframe
+        print("[+] Waiting for iframe...")
+        iframe = wait.until(
+            EC.presence_of_element_located((By.TAG_NAME, "iframe"))
         )
 
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            viewport={"width": 1280, "height": 720}
-        )
+        iframe_src = iframe.get_attribute("src")
 
-        page = context.new_page()
+        print("\n✅ IFRAME FOUND")
+        print(iframe_src)
 
-        iframe_links = scrape_iframes(page, url)
+    except Exception as e:
+        print("❌ Error:", e)
 
-        # Save results
-        if iframe_links:
-            with open("iframe_links.txt", "a", encoding="utf-8") as f:
-                for link in iframe_links:
-                    f.write(f"{url} | {link}\n")
-
-        browser.close()
-
-    print("\n✅ SCRAPING DONE")
+    finally:
+        driver.quit()
 
 
 if __name__ == "__main__":
-    main()
+    get_iframe()
